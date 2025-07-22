@@ -20,26 +20,7 @@ def convert_pdf_to_images(pdf_file, output_folder):
         image_paths.append(path)
     return image_paths
 
-def get_audio_duration(audio_file):
-    info = mediainfo(audio_file)
-    duration = float(info['duration'])
-    return duration
 
-def generate_video(slide_images, audio_file, output_file):
-    audio_duration = get_audio_duration(audio_file)
-    num_slides = len(slide_images)
-    slide_duration = audio_duration / num_slides
-
-    clips = []
-    for image_path in slide_images:
-        clip = ImageClip(image_path).with_duration(slide_duration)
-        clips.append(clip)
-
-    video = concatenate_videoclips(clips, method="compose")
-    audio = AudioFileClip(audio_file)
-    video = video.with_audio(audio)
-
-    video.write_videofile(output_file, fps=1)
 
 def main():
     print("=== Lecture Video Generator ===")
@@ -53,10 +34,7 @@ def main():
     slide_images = convert_pdf_to_images(pdf_file, output_folder="slides_images")
 
     output_file = pptx_file.replace('.pptx', '.mp4')
-    print("Generating video...")
-    generate_video(slide_images, audio_file, output_file)
 
-    print(f"Lecture video saved as {output_file}")
 
 if __name__ == "__main__":
     main()
