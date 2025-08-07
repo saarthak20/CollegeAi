@@ -1,1 +1,1 @@
-Colllege Helper Ai
+College Helper Ai

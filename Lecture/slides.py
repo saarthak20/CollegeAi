@@ -89,12 +89,12 @@ def generate_slides_from_markdown(md_file, theme_choice="1"):
 
     output_file = md_file.replace('Lecture', 'Slides').replace('.md', '.pptx')
 
-    # Ensure output directory exists
-    output_dir = os.path.dirname(output_file)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    base_dir = os.path.dirname(md_file)
+    base_name = os.path.basename(md_file).replace('Lecture', 'Slides').replace('.md', '.pptx')
+    output_file = os.path.join(base_dir, base_name)
 
     prs.save(output_file)
+
     print(f"✅ Slides saved as {output_file}")
 
 if __name__ == "__main__":
