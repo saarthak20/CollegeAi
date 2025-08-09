@@ -1,6 +1,185 @@
 import json
 import re
+import streamlit as st
 from google.generativeai import GenerativeModel
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+from reportlab.lib.units import inch
+from datetime import datetime
+import xml.etree.ElementTree as ET
+
+def export_quiz_to_pdf(quiz_data, quiz_topic, user_answers=None, score=None):
+    """Export quiz to PDF format with enhanced formatting"""
+    try:
+        filename = f"Quiz_{quiz_topic.replace(' ', '_').replace('/', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        doc = SimpleDocTemplate(filename, pagesize=A4)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Title
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            spaceAfter=30,
+            textColor='#667eea'
+        )
+        story.append(Paragraph(f"Quiz: {quiz_topic}", title_style))
+        
+        # Quiz metadata
+        story.append(Paragraph(f"Generated on: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", styles['Normal']))
+        story.append(Paragraph(f"Total Questions: {len(quiz_data)}", styles['Normal']))
+        
+        if score is not None:
+            percentage = (score/len(quiz_data)*100) if len(quiz_data) > 0 else 0
+            story.append(Paragraph(f"Score: {score}/{len(quiz_data)} ({percentage:.1f}%)", styles['Heading2']))
+        
+        story.append(Spacer(1, 20))
+        
+        # Questions
+        for i, q in enumerate(quiz_data):
+            # Question
+            story.append(Paragraph(f"<b>Question {i+1}:</b> {q['question']}", styles['Normal']))
+            story.append(Spacer(1, 6))
+            
+            # Options
+            for j, option in enumerate(q['options']):
+                letter = chr(65 + j)  # A, B, C, D
+                is_correct = letter == q['correct']
+                user_selected = user_answers and user_answers.get(i) == option
+                
+                if is_correct and user_selected:
+                    style_text = f"<b>{letter}. {option} ✓ (Correct - Your Answer)</b>"
+                elif is_correct:
+                    style_text = f"<b>{letter}. {option} ✓ (Correct Answer)</b>"
+                elif user_selected:
+                    style_text = f"{letter}. {option} ✗ (Your Answer)"
+                else:
+                    style_text = f"{letter}. {option}"
+                    
+                story.append(Paragraph(style_text, styles['Normal']))
+            
+            # Explanation
+            story.append(Spacer(1, 6))
+            story.append(Paragraph(f"<b>Explanation:</b> {q['explanation']}", styles['Normal']))
+            story.append(Spacer(1, 15))
+        
+        doc.build(story)
+        return filename
+    except Exception as e:
+        st.error(f"Error creating PDF: {str(e)}")
+        return None
+
+def export_quiz_to_moodle_xml(quiz_data, quiz_topic):
+    """Export quiz to Moodle XML format with proper escaping"""
+    try:
+        quiz_elem = ET.Element("quiz")
+        
+        for i, q in enumerate(quiz_data):
+            question_elem = ET.SubElement(quiz_elem, "question", type="multichoice")
+            
+            # Question name
+            name_elem = ET.SubElement(question_elem, "name")
+            text_elem = ET.SubElement(name_elem, "text")
+            text_elem.text = f"{quiz_topic} - Question {i+1}"
+            
+            # Question text
+            questiontext_elem = ET.SubElement(question_elem, "questiontext", format="html")
+            text_elem = ET.SubElement(questiontext_elem, "text")
+            text_elem.text = f"<![CDATA[<p>{q['question']}</p>]]>"
+            
+            # General feedback (explanation)
+            generalfeedback_elem = ET.SubElement(question_elem, "generalfeedback", format="html")
+            text_elem = ET.SubElement(generalfeedback_elem, "text")
+            text_elem.text = f"<![CDATA[<p>{q['explanation']}</p>]]>"
+            
+            # Default grade
+            defaultgrade_elem = ET.SubElement(question_elem, "defaultgrade")
+            defaultgrade_elem.text = "1"
+            
+            # Penalty
+            penalty_elem = ET.SubElement(question_elem, "penalty")
+            penalty_elem.text = "0.1"
+            
+            # Hidden
+            hidden_elem = ET.SubElement(question_elem, "hidden")
+            hidden_elem.text = "0"
+            
+            # Answer numbering
+            answernumbering_elem = ET.SubElement(question_elem, "answernumbering")
+            answernumbering_elem.text = "abc"
+            
+            # Options
+            for j, option in enumerate(q['options']):
+                fraction = "100" if chr(65 + j) == q['correct'] else "0"
+                answer_elem = ET.SubElement(question_elem, "answer", 
+                                          fraction=fraction, format="html")
+                text_elem = ET.SubElement(answer_elem, "text")
+                text_elem.text = f"<![CDATA[<p>{option}</p>]]>"
+                
+                # Feedback for each answer
+                feedback_elem = ET.SubElement(answer_elem, "feedback", format="html")
+                feedback_text_elem = ET.SubElement(feedback_elem, "text")
+                if chr(65 + j) == q['correct']:
+                    feedback_text_elem.text = "<![CDATA[<p>Correct!</p>]]>"
+                else:
+                    feedback_text_elem.text = "<![CDATA[<p>Incorrect.</p>]]>"
+        
+        filename = f"Quiz_{quiz_topic.replace(' ', '_').replace('/', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xml"
+        tree = ET.ElementTree(quiz_elem)
+        ET.indent(tree, space="  ", level=0)  # Pretty formatting
+        tree.write(filename, encoding='utf-8', xml_declaration=True)
+        return filename
+    except Exception as e:
+        st.error(f"Error creating Moodle XML: {str(e)}")
+        return None
+
+def export_quiz_to_json(quiz_data, quiz_topic, metadata=None, user_answers=None, score=None):
+    """Export quiz to JSON format with comprehensive data"""
+    try:
+        export_data = {
+            "quiz_info": {
+                "topic": quiz_topic,
+                "created_at": datetime.now().isoformat(),
+                "total_questions": len(quiz_data),
+                "version": "1.0"
+            },
+            "metadata": metadata or {},
+            "questions": quiz_data
+        }
+        
+        # Add results if available
+        if user_answers is not None and score is not None:
+            export_data["results"] = {
+                "score": score,
+                "total_questions": len(quiz_data),
+                "percentage": (score/len(quiz_data)*100) if len(quiz_data) > 0 else 0,
+                "user_answers": user_answers,
+                "completed_at": datetime.now().isoformat()
+            }
+        
+        filename = f"Quiz_{quiz_topic.replace(' ', '_').replace('/', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(export_data, f, indent=2, ensure_ascii=False)
+        return filename
+    except Exception as e:
+        st.error(f"Error creating JSON: {str(e)}")
+        return None
+
+    """Export quiz to JSON format"""
+    export_data = {
+        "topic": quiz_topic,
+        "created_at": datetime.now().isoformat(),
+        "metadata": metadata or {},
+        "questions": quiz_data
+    }
+    
+    filename = f"Quiz_{quiz_topic.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    with open(filename, 'w', encoding='utf-8') as f:
+        json.dump(export_data, f, indent=2, ensure_ascii=False)
+    return filename
 
 def clean_json_response(response_text):
     """

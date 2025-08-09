@@ -2,20 +2,18 @@ import streamlit as st
 import os
 import json
 import time
-import xml.etree.ElementTree as ET
+
 from datetime import datetime
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
-from reportlab.lib.units import inch
 from extractor import extract_pdf_text, extract_youtube_transcript, summarize_text
 from script import generate_slide_content, generate_professor_script
 from slides import generate_slides_from_markdown
 from TTS import generate_tts_per_slide
 from advance import generate_advanced_synced_video
 from video import convert_pptx_to_pdf, convert_pdf_to_images
-from quiz import generate_quiz
+from quiz import generate_quiz , export_quiz_to_pdf , export_quiz_to_moodle_xml , export_quiz_to_json
+from Flashcard import generate_flashcards
+from fpdf import FPDF
+
 
 st.set_page_config(
     page_title="CollegeAi - AI-Powered Learning", 
@@ -23,104 +21,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-# Export Functions
-def export_quiz_to_pdf(quiz_data, quiz_topic, user_answers=None, score=None):
-    """Export quiz to PDF format"""
-    filename = f"Quiz_{quiz_topic.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    doc = SimpleDocTemplate(filename, pagesize=A4)
-    styles = getSampleStyleSheet()
-    story = []
-    
-    # Title
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=24,
-        spaceAfter=30,
-        textColor='#667eea'
-    )
-    story.append(Paragraph(f"Quiz: {quiz_topic}", title_style))
-    
-    if score is not None:
-        story.append(Paragraph(f"Score: {score}/{len(quiz_data)} ({(score/len(quiz_data)*100):.1f}%)", styles['Heading2']))
-    
-    story.append(Spacer(1, 12))
-    
-    # Questions
-    for i, q in enumerate(quiz_data):
-        # Question
-        story.append(Paragraph(f"<b>Question {i+1}:</b> {q['question']}", styles['Normal']))
-        story.append(Spacer(1, 6))
-        
-        # Options
-        for j, option in enumerate(q['options']):
-            letter = chr(65 + j)  # A, B, C, D
-            is_correct = letter == q['correct']
-            user_selected = user_answers and user_answers.get(i) == option
-            
-            style_text = option
-            if is_correct:
-                style_text = f"<b>{letter}. {option} ✓ (Correct)</b>"
-            elif user_selected:
-                style_text = f"{letter}. {option} ✗ (Your Answer)"
-            else:
-                style_text = f"{letter}. {option}"
-                
-            story.append(Paragraph(style_text, styles['Normal']))
-        
-        # Explanation
-        story.append(Spacer(1, 6))
-        story.append(Paragraph(f"<b>Explanation:</b> {q['explanation']}", styles['Normal']))
-        story.append(Spacer(1, 12))
-    
-    doc.build(story)
-    return filename
 
-def export_quiz_to_moodle_xml(quiz_data, quiz_topic):
-    """Export quiz to Moodle XML format"""
-    quiz_elem = ET.Element("quiz")
-    
-    for i, q in enumerate(quiz_data):
-        question_elem = ET.SubElement(quiz_elem, "question", type="multichoice")
-        
-        name_elem = ET.SubElement(question_elem, "name")
-        text_elem = ET.SubElement(name_elem, "text")
-        text_elem.text = f"Question {i+1}"
-        
-        questiontext_elem = ET.SubElement(question_elem, "questiontext", format="html")
-        text_elem = ET.SubElement(questiontext_elem, "text")
-        text_elem.text = f"<![CDATA[{q['question']}]]>"
-        
-        generalfeedback_elem = ET.SubElement(question_elem, "generalfeedback", format="html")
-        text_elem = ET.SubElement(generalfeedback_elem, "text")
-        text_elem.text = f"<![CDATA[{q['explanation']}]]>"
-        
-        # Options
-        for j, option in enumerate(q['options']):
-            answer_elem = ET.SubElement(question_elem, "answer", 
-                                      fraction="100" if chr(65 + j) == q['correct'] else "0",
-                                      format="html")
-            text_elem = ET.SubElement(answer_elem, "text")
-            text_elem.text = f"<![CDATA[{option}]]>"
-    
-    filename = f"Quiz_{quiz_topic.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xml"
-    tree = ET.ElementTree(quiz_elem)
-    tree.write(filename, encoding='utf-8', xml_declaration=True)
-    return filename
-
-def export_quiz_to_json(quiz_data, quiz_topic, metadata=None):
-    """Export quiz to JSON format"""
-    export_data = {
-        "topic": quiz_topic,
-        "created_at": datetime.now().isoformat(),
-        "metadata": metadata or {},
-        "questions": quiz_data
-    }
-    
-    filename = f"Quiz_{quiz_topic.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(filename, 'w', encoding='utf-8') as f:
-        json.dump(export_data, f, indent=2, ensure_ascii=False)
-    return filename
+# Export Functions (Enhanced with error handling)
 
 def get_timer_seconds(time_limit):
     """Convert time limit string to seconds"""
@@ -132,7 +34,7 @@ def get_timer_seconds(time_limit):
         return 120
     return 60  # default
 
-# Custom CSS
+# Custom CSS (keeping your existing styles)
 st.markdown("""
 <style>
     /* Import Google Fonts */
@@ -167,12 +69,12 @@ st.markdown("""
     .main-title {
         font-size: 3.5rem;
         font-weight: 700;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        color: white;
+        text-shadow: 2px 2px 8px rgba(0,0,0,0.3);
         text-align: center;
         margin-bottom: 1rem;
     }
+
     
     .subtitle {
         font-size: 1.2rem;
@@ -180,6 +82,15 @@ st.markdown("""
         text-align: center;
         margin-bottom: 2rem;
         line-height: 1.6;
+    }
+    
+    /* Export section styling */
+    .export-section {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+        padding: 1.5rem;
+        border-radius: 15px;
+        margin: 1rem 0;
+        border: 1px solid rgba(102, 126, 234, 0.2);
     }
     
     /* Card styling */
@@ -214,6 +125,24 @@ st.markdown("""
     .stButton > button:hover {
         transform: translateY(-2px);
         box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+    }
+    
+    /* Download button styling */
+    .stDownloadButton > button {
+        background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        color: white;
+        border: none;
+        padding: 0.5rem 1.5rem;
+        border-radius: 25px;
+        font-weight: 500;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+        box-shadow: 0 3px 10px rgba(76, 175, 80, 0.3);
+    }
+    
+    .stDownloadButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 5px 15px rgba(76, 175, 80, 0.5);
     }
     
     /* Input styling */
@@ -253,6 +182,33 @@ st.markdown("""
         border-radius: 20px;
         margin: 1rem 0;
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Timer styling */
+    .timer-container {
+        text-align: center;
+        padding: 1rem;
+        background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+        color: white;
+        border-radius: 10px;
+        margin: 1rem 0;
+        font-weight: 600;
+        font-size: 1.1rem;
+    }
+    
+    .timer-warning {
+        background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%) !important;
+    }
+    
+    .timer-critical {
+        background: linear-gradient(135deg, #F44336 0%, #D32F2F 100%) !important;
+        animation: pulse 1s infinite;
+    }
+    
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.7; }
+        100% { opacity: 1; }
     }
     
     /* Metrics styling */
@@ -328,7 +284,7 @@ def homepage():
                 <li>Adaptive difficulty levels</li>
                 <li>Instant feedback</li>
                 <li>Progress tracking</li>
-                <li>Detailed explanations</li>
+                <li>Export to multiple formats</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -552,14 +508,11 @@ def quiz_generator():
                 except Exception as e:
                     st.error(f"❌ Error processing PDF: {str(e)}")
 
-
     # Optional inputs
     with st.expander("📁 Optional Content Sources"):
-        slide_md = ""
         uploaded_md = st.file_uploader("Upload Slide Markdown", type=["md"])
         if uploaded_md:
             slide_md = uploaded_md.read().decode("utf-8")
-        
 
     # Initialize session state
     quiz_state_vars = [
@@ -567,7 +520,7 @@ def quiz_generator():
         ("quiz_generated", False), ("quiz_completed", False),
         ("start_time", None), ("time_remaining", None), ("timed_mode", False),
         ("incorrect_questions", []), ("review_mode", False), ("quiz_topic", ""),
-        ("quiz_metadata", {})
+        ("quiz_metadata", {}), ("export_quiz_data", None)
     ]
     
     for var, default in quiz_state_vars:
@@ -599,7 +552,8 @@ def quiz_generator():
                                 "difficulty": difficulty,
                                 "time_limit": time_limit,
                                 "timed_mode": timed_mode,
-                                "mode": quiz_mode
+                                "mode": quiz_mode,
+                                "num_questions": num_questions
                             }
                             
                             if timed_mode and not st.session_state.review_mode:
@@ -611,6 +565,90 @@ def quiz_generator():
                             st.error("❌ Failed to generate quiz. Please try again.")
                     except Exception as e:
                         st.error(f"❌ Error generating quiz: {str(e)}")
+
+    # Export Options (Show only after quiz is generated)
+    if st.session_state.quiz_generated and st.session_state.quiz:
+        st.markdown("---")
+        st.markdown('<div class="export-section">', unsafe_allow_html=True)
+        st.markdown("### 📤 Export Quiz")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if st.button("📄 Export to PDF", use_container_width=True, help="Download quiz as PDF with answers and explanations"):
+                with st.spinner("Creating PDF..."):
+                    pdf_file = export_quiz_to_pdf(
+                        st.session_state.quiz, 
+                        st.session_state.quiz_topic,
+                        st.session_state.answers if st.session_state.quiz_completed else None,
+                        st.session_state.score if st.session_state.quiz_completed else None
+                    )
+                    if pdf_file and os.path.exists(pdf_file):
+                        with open(pdf_file, "rb") as file:
+                            st.download_button(
+                                "📥 Download PDF",
+                                data=file.read(),
+                                file_name=pdf_file,
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                        os.remove(pdf_file)  # Clean up temporary file
+                        st.success("✅ PDF created successfully!")
+        
+        with col2:
+            if st.button("🎓 Export to Moodle XML", use_container_width=True, help="Export for Moodle LMS import"):
+                with st.spinner("Creating Moodle XML..."):
+                    xml_file = export_quiz_to_moodle_xml(st.session_state.quiz, st.session_state.quiz_topic)
+                    if xml_file and os.path.exists(xml_file):
+                        with open(xml_file, "rb") as file:
+                            st.download_button(
+                                "📥 Download XML",
+                                data=file.read(),
+                                file_name=xml_file,
+                                mime="application/xml",
+                                use_container_width=True
+                            )
+                        os.remove(xml_file)  # Clean up temporary file
+                        st.success("✅ Moodle XML created successfully!")
+        
+        with col3:
+            if st.button("📊 Export to JSON", use_container_width=True, help="Export as JSON for data analysis"):
+                with st.spinner("Creating JSON..."):
+                    json_file = export_quiz_to_json(
+                        st.session_state.quiz, 
+                        st.session_state.quiz_topic,
+                        st.session_state.quiz_metadata,
+                        st.session_state.answers if st.session_state.quiz_completed else None,
+                        st.session_state.score if st.session_state.quiz_completed else None
+                    )
+                    if json_file and os.path.exists(json_file):
+                        with open(json_file, "rb") as file:
+                            st.download_button(
+                                "📥 Download JSON",
+                                data=file.read(),
+                                file_name=json_file,
+                                mime="application/json",
+                                use_container_width=True
+                            )
+                        os.remove(json_file)  # Clean up temporary file
+                        st.success("✅ JSON created successfully!")
+        
+        with col4:
+            if st.button("📋 Copy Quiz Text", use_container_width=True, help="Copy quiz as formatted text"):
+                quiz_text = f"Quiz: {st.session_state.quiz_topic}\n"
+                quiz_text += f"Generated on: {datetime.now().strftime('%B %d, %Y')}\n\n"
+                
+                for i, q in enumerate(st.session_state.quiz):
+                    quiz_text += f"Question {i+1}: {q['question']}\n"
+                    for j, option in enumerate(q['options']):
+                        letter = chr(65 + j)
+                        mark = " (Correct)" if letter == q['correct'] else ""
+                        quiz_text += f"{letter}. {option}{mark}\n"
+                    quiz_text += f"Explanation: {q['explanation']}\n\n"
+                
+                st.text_area("Quiz Text (Copy this)", value=quiz_text, height=200)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # Quiz interface
     if st.session_state.quiz_generated and st.session_state.quiz:
@@ -781,6 +819,66 @@ def quiz_generator():
                     <h3 style="color: #666; margin: 0;">Score: {st.session_state.score}/{len(quiz)} ({percentage:.1f}%)</h3>
                 </div>
                 """, unsafe_allow_html=True)
+
+            # Export results section
+            st.markdown("---")
+            st.markdown('<div class="export-section">', unsafe_allow_html=True)
+            st.markdown("### 📤 Export Your Results")
+            st.info("💡 Now that you've completed the quiz, you can export your results with answers and scores!")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if st.button("📄 Export Results to PDF", use_container_width=True):
+                    with st.spinner("Creating results PDF..."):
+                        pdf_file = export_quiz_to_pdf(
+                            st.session_state.quiz, 
+                            st.session_state.quiz_topic,
+                            st.session_state.answers,
+                            st.session_state.score
+                        )
+                        if pdf_file and os.path.exists(pdf_file):
+                            with open(pdf_file, "rb") as file:
+                                st.download_button(
+                                    "📥 Download Results PDF",
+                                    data=file.read(),
+                                    file_name=pdf_file,
+                                    mime="application/pdf",
+                                    use_container_width=True
+                                )
+                            os.remove(pdf_file)
+                            st.success("✅ Results PDF created!")
+            
+            with col2:
+                if st.button("📊 Export Results to JSON", use_container_width=True):
+                    with st.spinner("Creating results JSON..."):
+                        json_file = export_quiz_to_json(
+                            st.session_state.quiz, 
+                            st.session_state.quiz_topic,
+                            st.session_state.quiz_metadata,
+                            st.session_state.answers,
+                            st.session_state.score
+                        )
+                        if json_file and os.path.exists(json_file):
+                            with open(json_file, "rb") as file:
+                                st.download_button(
+                                    "📥 Download Results JSON",
+                                    data=file.read(),
+                                    file_name=json_file,
+                                    mime="application/json",
+                                    use_container_width=True
+                                )
+                            os.remove(json_file)
+                            st.success("✅ Results JSON created!")
+            
+            with col3:
+                # Performance summary
+                st.metric("Final Score", f"{st.session_state.score}/{len(quiz)}")
+                st.metric("Percentage", f"{percentage:.1f}%")
+                if st.session_state.incorrect_questions:
+                    st.metric("Incorrect", len(st.session_state.incorrect_questions))
+            
+            st.markdown('</div>', unsafe_allow_html=True)
             
             # Detailed results
             st.markdown("### 📊 Detailed Results")
@@ -793,7 +891,10 @@ def quiz_generator():
                     st.markdown(f"**Question:** {q['question']}")
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.markdown(f"**Your Answer:** {user_answer}")
+                        if user_answer == "Time Expired":
+                            st.markdown(f"**Your Answer:** ⏰ Time Expired")
+                        else:
+                            st.markdown(f"**Your Answer:** {user_answer}")
                     with col2:
                         st.markdown(f"**Correct Answer:** {correct_answer}")
                     st.markdown(f"**Explanation:** {q['explanation']}")
@@ -802,19 +903,374 @@ def quiz_generator():
             col1, col2, col3 = st.columns([1, 1, 1])
             with col2:
                 if st.button("🔄 Take Another Quiz", use_container_width=True):
-                    st.session_state.quiz = []
-                    st.session_state.score = 0
-                    st.session_state.q_index = 0
-                    st.session_state.answers = {}
-                    st.session_state.quiz_generated = False
-                    st.session_state.quiz_completed = False
+                    # Reset all session state
+                    for var, default in quiz_state_vars:
+                        st.session_state[var] = default
                     st.rerun()
+
+def flashcard_generator():
+    st.markdown('<h1 class="main-title">📇 Flashcard Generator</h1>', unsafe_allow_html=True)
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        topic = st.text_input("📚 Enter Topic", placeholder="e.g., Data Structures Basics")
+    with col2:
+        num_cards = st.slider("🃏 Number of Flashcards", 1, 30, 10)
+
+    col1, col2 = st.columns(2)
+    st.markdown("### 📖 Content Source (Optional)")
+    input_source = st.radio("Choose context source", ["None", "YouTube Video", "PDF Notes"], horizontal=True)
+    slide_md = ""
+    context = ""
+
+    if input_source == "YouTube Video":
+        url = st.text_input("🎥 YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
+        if url:
+            with st.spinner("🔄 Extracting and summarizing transcript..."):
+                try:
+                    transcript = extract_youtube_transcript(url)
+                    context = summarize_text(transcript, topic)
+                    st.success("✅ Transcript processed successfully!")
+                except Exception as e:
+                    st.error(f"❌ Error processing YouTube URL: {str(e)}")
+                    
+    elif input_source == "PDF Notes":
+        pdf_file = st.file_uploader("📄 Upload PDF Notes", type=["pdf"], help="Upload your study materials")
+        if pdf_file:
+            with st.spinner("📖 Extracting and summarizing PDF content..."):
+                try:
+                    text = extract_pdf_text(pdf_file)
+                    context = summarize_text(text, topic)
+                    st.success("✅ PDF content processed successfully!")
+                except Exception as e:
+                    st.error(f"❌ Error processing PDF: {str(e)}")
+
+    with col1:
+        difficulty = st.selectbox("🎖️ Difficulty Level", ["Easy", "Medium", "Hard"])
+        language = st.selectbox("🌍 Language", 
+            ["English", "Hindi", "Kannada", "German", "French", "Japanese", "Spanish", "Tamil", "Telugu", "Malayalam", "Chinese", "Other"])
+        if language == "Other":
+            language = st.text_input("Enter your language")
+    with col2:
+        slide_md = ""
+        uploaded_md = st.file_uploader("📄 Upload Slide Markdown (optional)", type=["md"])
+        if uploaded_md:
+            slide_md = uploaded_md.read().decode("utf-8")
+        
+
+    if "flashcards" not in st.session_state:
+        st.session_state.flashcards = []
+
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🎲 Generate Flashcards", use_container_width=True):
+            if not topic:
+                st.warning("⚠️ Please enter a topic.")
+            else:
+                with st.spinner("🪄 Creating flashcards..."):
+                    cards = generate_flashcards(topic, num_cards, difficulty, language, slide_md, context)
+                    if cards:
+                        st.session_state.flashcards = cards
+                        st.success("✅ Flashcards generated successfully!")
+                    else:
+                        st.error("❌ Failed to generate flashcards.")
+
+    # Display flashcards using Streamlit columns for better layout
+    if st.session_state.flashcards:
+        st.markdown("### 📌 Your Flashcards")
+        st.markdown("*Click on any flashcard to reveal the answer*")
+        
+        # Initialize flip state for each card if not exists
+        if "card_flipped" not in st.session_state:
+            st.session_state.card_flipped = [False] * len(st.session_state.flashcards)
+        
+        # Ensure the flip state list matches the number of cards
+        if len(st.session_state.card_flipped) != len(st.session_state.flashcards):
+            st.session_state.card_flipped = [False] * len(st.session_state.flashcards)
+        
+        # CSS for the flashcards
+        st.markdown("""
+        <style>
+        .flashcard-container {
+            margin: 20px 0;
+        }
+        
+        .flashcard {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 10px 0;
+            color: white;
+            text-align: center;
+            min-height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            font-size: 16px;
+            font-weight: 500;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .flashcard:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+        
+        .flashcard-front {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .flashcard-back {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .flashcard-content {
+            padding: 10px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+        
+        .flip-all-btn {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            border: none;
+            border-radius: 25px;
+            padding: 10px 20px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 10px 5px;
+            transition: all 0.3s ease;
+        }
+        
+        .flip-all-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Add flip all buttons
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            subcol1, subcol2 = st.columns(2)
+            with subcol1:
+                if st.button("🔄 Flip All to Questions", use_container_width=True):
+                    st.session_state.card_flipped = [False] * len(st.session_state.flashcards)
+                    st.rerun()
+            with subcol2:
+                if st.button("🔄 Flip All to Answers", use_container_width=True):
+                    st.session_state.card_flipped = [True] * len(st.session_state.flashcards)
+                    st.rerun()
+        
+        st.markdown("---")
+        
+        # Display flashcards in a responsive grid using Streamlit columns
+        cards_per_row = 2  # Adjust this based on your preference
+        
+        for i in range(0, len(st.session_state.flashcards), cards_per_row):
+            cols = st.columns(cards_per_row)
+            
+            for j in range(cards_per_row):
+                card_idx = i + j
+                if card_idx < len(st.session_state.flashcards):
+                    card = st.session_state.flashcards[card_idx]
+                    
+                    with cols[j]:
+                        # Determine if card is flipped
+                        is_flipped = st.session_state.card_flipped[card_idx]
+                        
+                        # Create the flashcard
+                        card_class = "flashcard-back" if is_flipped else "flashcard-front"
+                        card_content = card['back'] if is_flipped else card['front']
+                        
+                        # Make the card clickable
+                        if st.button(
+                            f"📱 Card {card_idx + 1}",
+                            key=f"card_button_{card_idx}",
+                            help="Click to flip the card",
+                            use_container_width=True
+                        ):
+                            st.session_state.card_flipped[card_idx] = not st.session_state.card_flipped[card_idx]
+                            st.rerun()
+                        
+                        # Display the card content
+                        st.markdown(f"""
+                        <div class="flashcard {card_class}">
+                            <div class="flashcard-content">
+                                {card_content}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Study modes
+        st.markdown("### 📚 Study Modes")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🎯 Quiz Mode", use_container_width=True):
+                st.session_state.quiz_mode = True
+                st.session_state.current_card = 0
+                st.session_state.card_flipped = [False] * len(st.session_state.flashcards)
+                st.rerun()
+        
+        with col2:
+            if st.button("🔀 Shuffle Cards", use_container_width=True):
+                import random
+                random.shuffle(st.session_state.flashcards)
+                st.session_state.card_flipped = [False] * len(st.session_state.flashcards)
+                st.rerun()
+        
+        with col3:
+            if st.button("🔄 Reset All", use_container_width=True):
+                st.session_state.card_flipped = [False] * len(st.session_state.flashcards)
+                st.rerun()
+        
+        # Quiz mode
+        if hasattr(st.session_state, 'quiz_mode') and st.session_state.quiz_mode:
+            st.markdown("### 🎯 Quiz Mode")
+            
+            if 'current_card' not in st.session_state:
+                st.session_state.current_card = 0
+            
+            current_idx = st.session_state.current_card
+            if current_idx < len(st.session_state.flashcards):
+                card = st.session_state.flashcards[current_idx]
+                
+                st.markdown(f"**Card {current_idx + 1} of {len(st.session_state.flashcards)}**")
+                
+                col1, col2, col3 = st.columns([1, 3, 1])
+                with col2:
+                    if st.session_state.card_flipped[current_idx]:
+                        st.markdown(f"""
+                        <div class="flashcard flashcard-back">
+                            <div class="flashcard-content">
+                                <strong>Answer:</strong><br>
+                                {card['back']}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div class="flashcard flashcard-front">
+                            <div class="flashcard-content">
+                                <strong>Question:</strong><br>
+                                {card['front']}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    if st.button("⬅️ Previous") and current_idx > 0:
+                        st.session_state.current_card -= 1
+                        st.rerun()
+                
+                with col2:
+                    if st.button("🔄 Flip"):
+                        st.session_state.card_flipped[current_idx] = not st.session_state.card_flipped[current_idx]
+                        st.rerun()
+                
+                with col3:
+                    if st.button("➡️ Next") and current_idx < len(st.session_state.flashcards) - 1:
+                        st.session_state.current_card += 1
+                        st.rerun()
+                
+                with col4:
+                    if st.button("❌ Exit Quiz"):
+                        st.session_state.quiz_mode = False
+                        st.rerun()
+            else:
+                st.success("🎉 Quiz completed!")
+                if st.button("🔄 Restart Quiz"):
+                    st.session_state.current_card = 0
+                    st.session_state.card_flipped = [False] * len(st.session_state.flashcards)
+                    st.rerun()
+
+        st.markdown("---")
+
+        # Export functions
+        def export_pdf(flashcards):
+            pdf = FPDF()
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.add_page()
+            pdf.set_font("Arial", "B", 20)
+            pdf.cell(0, 15, "Flashcards", ln=True, align="C")
+            pdf.ln(10)
+            
+            for i, fc in enumerate(flashcards, 1):
+                pdf.set_font("Arial", "B", 14)
+                pdf.cell(0, 10, f"Card {i}", ln=True)
+                pdf.set_font("Arial", "B", 12)
+                pdf.cell(30, 8, "Question:", 0, 0)
+                pdf.set_font("Arial", "", 12)
+                pdf.multi_cell(0, 8, str(fc['front']), 0, 1)
+                pdf.set_font("Arial", "B", 12)
+                pdf.cell(30, 8, "Answer:", 0, 0)
+                pdf.set_font("Arial", "", 12)
+                pdf.multi_cell(0, 8, str(fc['back']), 0, 1)
+                pdf.ln(5)
+                
+            pdf_path = "flashcards.pdf"
+            pdf.output(pdf_path)
+            return pdf_path
+
+        # Download buttons
+        st.markdown("### 📥 Export Options")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("📄 Generate PDF", use_container_width=True):
+                with st.spinner("Creating PDF..."):
+                    pdf_path = export_pdf(st.session_state.flashcards)
+                    with open(pdf_path, "rb") as f:
+                        st.download_button(
+                            "📥 Download PDF", 
+                            f.read(), 
+                            "flashcards.pdf",
+                            "application/pdf",
+                            use_container_width=True
+                        )
+        
+        with col2:
+            json_data = json.dumps(st.session_state.flashcards, indent=2, ensure_ascii=False)
+            st.download_button(
+                "📥 Download JSON", 
+                json_data, 
+                "flashcards.json",
+                "application/json",
+                use_container_width=True
+            )
+        
+        with col3:
+            text_content = "FLASHCARDS\n" + "="*50 + "\n\n"
+            for i, card in enumerate(st.session_state.flashcards, 1):
+                text_content += f"Card {i}:\n"
+                text_content += f"Q: {card['front']}\n"
+                text_content += f"A: {card['back']}\n\n"
+            
+            st.download_button(
+                "📥 Download TXT",
+                text_content,
+                "flashcards.txt",
+                "text/plain",
+                use_container_width=True
+            )
 
 # Navigation
 PAGES = {
     "🏠 Home": homepage,
     "🎓 Lecture Generator": lecture_generator,
-    "📝 Quiz Generator": quiz_generator
+    "📝 Quiz Generator": quiz_generator,
+    "📇 Flashcard Generator": flashcard_generator
 }
 
 # Sidebar styling
@@ -847,7 +1303,16 @@ st.sidebar.markdown("### 🎯 Features")
 st.sidebar.markdown("- 🎬 Auto-generated lectures")
 st.sidebar.markdown("- 🗣️ Professional voiceovers")
 st.sidebar.markdown("- 📝 Smart quiz generation")
+st.sidebar.markdown("- 📤 Multiple export formats")
 st.sidebar.markdown("- 🌍 Multi-language support")
-st.sidebar.markdown("- 🎨 Beautiful themes")
+st.sidebar.markdown("- 📇 Efficient Flashcard generation")
+
+# Footer
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📤 Export Formats Supported")
+st.sidebar.markdown("- 📄 PDF (with results)")
+st.sidebar.markdown("- 🎓 Moodle XML")
+st.sidebar.markdown("- 📊 JSON (data analysis)")
+st.sidebar.markdown("- 📋 Plain text")
 
 PAGES[selection]()
