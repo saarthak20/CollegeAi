@@ -1,0 +1,14 @@
+streamlit
+youtube_transcript_api
+pytube
+pdf2image
+moviepy
+pydub
+python-pptx
+reportlab
+langchain
+google-generativeai
+pymupdf
+numpy
+Pillow
+wave

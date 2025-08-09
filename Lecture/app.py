@@ -2,7 +2,6 @@ import streamlit as st
 import os
 import json
 import time
-
 from datetime import datetime
 from extractor import extract_pdf_text, extract_youtube_transcript, summarize_text
 from script import generate_slide_content, generate_professor_script
