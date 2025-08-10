@@ -4,7 +4,7 @@ import json
 import time
 from datetime import datetime
 from extractor import extract_pdf_text, extract_youtube_transcript, summarize_text
-from script import generate_slide_content, generate_professor_script
+from script import generate_slide_content, generate_professor_script ,generate_notes_gemini
 from slides import generate_slides_from_markdown
 from TTS import generate_tts_per_slide
 from advance import generate_advanced_synced_video
@@ -12,6 +12,7 @@ from video import convert_pptx_to_pdf, convert_pdf_to_images
 from quiz import generate_quiz , export_quiz_to_pdf , export_quiz_to_moodle_xml , export_quiz_to_json
 from Flashcard import generate_flashcards
 from fpdf import FPDF
+import pypandoc
 
 
 st.set_page_config(
@@ -1264,12 +1265,71 @@ def flashcard_generator():
                 use_container_width=True
             )
 
+def notes_generator():
+    st.title("🗒️ Notes Maker")
+
+    topic = st.text_input("Enter Topic", key="notes_topic")
+    input_source = st.radio("Choose context source", ["None", "YouTube Video", "PDF Notes", "Manual Text"], key="notes_source")
+    context = ""
+
+    if input_source == "YouTube Video":
+        url = st.text_input("Enter YouTube URL", key="notes_youtube")
+        if url:
+            with st.spinner("Extracting and summarizing transcript..."):
+                transcript = extract_youtube_transcript(url)
+                context = summarize_text(transcript, topic)
+    elif input_source == "PDF Notes":
+        pdf_file = st.file_uploader("Upload PDF", type=["pdf"], key="notes_pdf")
+        if pdf_file:
+            with st.spinner("Extracting and summarizing PDF content..."):
+                text = extract_pdf_text(pdf_file)
+                context = summarize_text(text, topic)
+    elif input_source == "Manual Text":
+        manual_text = st.text_area("Paste your content here", key="notes_manual")
+        if manual_text:
+            context = manual_text
+
+    length = st.selectbox("Notes Length", ["Short", "Medium", "Detailed"], key="notes_length")
+    language = st.selectbox("Language", ["English", "Hindi", "Kannada", "German", "French", "Japanese", "Spanish", "Tamil", "Telugu", "Malayalam", "Chinese", "Other"], key="notes_lang")
+    if language == "Other":
+        language = st.text_input("Enter your language", key="notes_other_lang")
+
+    if st.button("📝 Generate Notes", key="generate_notes"):
+        if not topic:
+            st.warning("Please enter a topic.")
+            return
+
+        with st.spinner("Generating notes..."):
+            notes_md = generate_notes_gemini(topic, length, context=context, language=language)
+            notes_md_file = f"Notes_{topic.replace(' ', '_')}.md"
+            with open(notes_md_file, "w", encoding="utf-8") as f:
+                f.write(notes_md)
+
+        st.subheader("📄 Generated Notes")
+        st.markdown(notes_md)
+
+        # Convert MD → TXT
+        txt_file = notes_md_file.replace(".md", ".txt")
+        with open(txt_file, "w", encoding="utf-8") as f:
+            f.write(notes_md)
+
+        # Convert MD → PDF
+        pdf_file = notes_md_file.replace(".md", ".pdf")
+        pypandoc.convert_text(notes_md, 'pdf', format='md', outputfile=pdf_file, extra_args=['--standalone'])
+
+        # Downloads
+        st.download_button("📥 Download Markdown", data=open(notes_md_file, "rb"), file_name=os.path.basename(notes_md_file))
+        st.download_button("📥 Download TXT", data=open(txt_file, "rb"), file_name=os.path.basename(txt_file))
+        st.download_button("📥 Download PDF", data=open(pdf_file, "rb"), file_name=os.path.basename(pdf_file))
+
+
 # Navigation
 PAGES = {
     "🏠 Home": homepage,
     "🎓 Lecture Generator": lecture_generator,
     "📝 Quiz Generator": quiz_generator,
-    "📇 Flashcard Generator": flashcard_generator
+    "📇 Flashcard Generator": flashcard_generator,
+    "🗒️ Notes Maker": notes_generator
 }
 
 # Sidebar styling

@@ -1,5 +1,8 @@
 from google.generativeai import GenerativeModel
 
+
+
+
 def translate_text(text, target_language="Hindi"):
     prompt = f"""
 Translate the following professor lecture narration to {target_language}. 
@@ -90,3 +93,25 @@ Use the same ## section formatting for each.
         return translated_script
     else:
         return english_script
+    
+
+
+
+def generate_notes_gemini(topic, length, context="", language="English"):
+    prompt = f"""
+    You are an academic assistant. Generate well-structured study notes in markdown.
+    Topic: {topic}
+    Language: {language}
+    Length: {length}
+
+    Context (if provided):
+    {context}
+
+    Requirements:
+    - Use clear headings (##) and bullet points
+    - Keep language simple but academic
+    - Ensure logical flow
+    """
+    model = GenerativeModel("gemini-2.0-flash")
+    response = model.generate_content(prompt)
+    return response.text
