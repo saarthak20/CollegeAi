@@ -14,6 +14,13 @@ from Flashcard import generate_flashcards
 from fpdf import FPDF
 import pypandoc
 
+def configure_gemini():
+    import google.generativeai as genai
+    if "GOOGLE_API_KEY" not in st.session_state:
+        st.error("❌ Google API Key is missing. Please go to Home and enter it.")
+        st.stop()
+    genai.configure(api_key=st.session_state["GOOGLE_API_KEY"])
+
 
 st.set_page_config(
     page_title="CollegeAi - AI-Powered Learning", 
@@ -253,10 +260,23 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+
+
 def homepage():
     # Hero Section
     st.markdown('<h1 class="main-title">🎓 CollegeAi</h1>', unsafe_allow_html=True)
     st.markdown('<p class="subtitle">Transform your learning experience with AI-powered lectures, interactive slides, and personalized content generation</p>', unsafe_allow_html=True)
+    
+    # Google API Key Input
+    with st.container():
+        st.subheader("🔑 Google API Key")
+        api_key = st.text_input("Enter your Google API Key", type="password", help="Required for all AI features")
+        if api_key:
+            st.session_state["GOOGLE_API_KEY"] = api_key
+            os.environ["GOOGLE_API_KEY"] = api_key
+            st.success("✅ API Key saved successfully for this session.")
+        elif "GOOGLE_API_KEY" not in st.session_state:
+            st.warning("⚠️ Please enter your Google API Key to use the app.")
     
     # Feature Cards
     col1, col2, col3 = st.columns(3)
@@ -292,13 +312,13 @@ def homepage():
     with col3:
         st.markdown("""
         <div class="feature-card">
-            <h3 style="color: #667eea; font-size: 1.5rem; margin-bottom: 1rem;">🎨 Custom Themes</h3>
-            <p>Choose from beautiful presentation themes and personalized professor personas for engaging content.</p>
+            <h3 style="color: #667eea; font-size: 1.5rem; margin-bottom: 1rem;">📝 Flashcards & Notes 🗂️</h3>
+            <p>Create concise study materials and interactive flashcards for effective learning and quick revisions.</p>
             <ul style="color: #666;">
-                <li>Multiple slide themes</li>
-                <li>Professor personas</li>
-                <li>Custom styling</li>
-                <li>Professional layouts</li>
+                <li>AI-generated concise notes from any source</li>
+                <li>Beautifully formatted for easy reading</li>
+                <li>Smart flashcards for active recall</li>
+                <li>Supports multiple export formats (PDF, TXT, JSON)</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -309,9 +329,10 @@ def homepage():
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.info("📚 Navigate to **Lecture Generator** to create your first AI-powered lecture, or try the **Quiz Generator** to test your knowledge!")
+        st.info("📚 Navigate to **Lecture Generator** to create your first AI-powered lecture, or try the **Quiz Generator** to test your knowledge! You can also checkout **Flashcards** and **Notes**")
 
 def lecture_generator():
+    configure_gemini()
     st.markdown('<h1 class="main-title">📚 Lecture Generator</h1>', unsafe_allow_html=True)
     
     # Input Section
@@ -330,7 +351,6 @@ def lecture_generator():
     st.markdown("### 📖 Content Source (Optional)")
     input_source = st.radio("Choose context source", ["None", "YouTube Video", "PDF Notes"], horizontal=True)
     context = ""
-
     if input_source == "YouTube Video":
         url = st.text_input("🎥 YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
         if url:
@@ -461,6 +481,7 @@ def lecture_generator():
             status_text.empty()
 
 def quiz_generator():
+    configure_gemini()
     st.markdown('<h1 class="main-title">📝 Quiz Generator</h1>', unsafe_allow_html=True)
 
     # Input section
@@ -909,6 +930,7 @@ def quiz_generator():
                     st.rerun()
 
 def flashcard_generator():
+    configure_gemini()
     st.markdown('<h1 class="main-title">📇 Flashcard Generator</h1>', unsafe_allow_html=True)
 
     col1, col2 = st.columns([2, 1])
@@ -1266,6 +1288,7 @@ def flashcard_generator():
             )
 
 def notes_generator():
+    configure_gemini()
     st.title("🗒️ Notes Maker")
 
     topic = st.text_input("Enter Topic", key="notes_topic")
@@ -1315,7 +1338,17 @@ def notes_generator():
 
         # Convert MD → PDF
         pdf_file = notes_md_file.replace(".md", ".pdf")
-        pypandoc.convert_text(notes_md, 'pdf', format='md', outputfile=pdf_file, extra_args=['--standalone'])
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+
+        pdf.set_font("Arial", size=12)
+
+        # Split by lines and write
+        for line in notes_md.split("\n"):
+            pdf.multi_cell(0, 8, line)
+
+        pdf.output(pdf_file)
 
         # Downloads
         st.download_button("📥 Download Markdown", data=open(notes_md_file, "rb"), file_name=os.path.basename(notes_md_file))
@@ -1351,7 +1384,8 @@ st.markdown("""
 
 st.sidebar.markdown("# 📂 Navigation")
 st.sidebar.markdown("---")
-selection = st.sidebar.radio("", list(PAGES.keys()), label_visibility="collapsed")
+selection = st.sidebar.radio("Navigate", list(PAGES.keys()), label_visibility="collapsed")
+
 
 # Add some sidebar info
 st.sidebar.markdown("---")
@@ -1373,5 +1407,6 @@ st.sidebar.markdown("- 📄 PDF (with results)")
 st.sidebar.markdown("- 🎓 Moodle XML")
 st.sidebar.markdown("- 📊 JSON (data analysis)")
 st.sidebar.markdown("- 📋 Plain text")
+
 
 PAGES[selection]()
