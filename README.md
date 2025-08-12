@@ -6,7 +6,7 @@ CollegeAi is an all-in-one AI-powered educational platform that generates lectur
 ---
 
 ## 🎥 Demo Video
-[![Watch the Demo](https://img.youtube.com/vi/WkI2gbuy4fs/0.jpg)](https://youtu.be/WkI2gbuy4fs)  
+[![Watch the Demo](https://img.youtube.com/vi/A0mfKNGUJs8/0.jpg)](https://youtu.be/A0mfKNGUJs8)  
 
 
 ---
